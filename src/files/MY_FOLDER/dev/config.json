@@ -1,0 +1,6 @@
+{
+  "region": "ap-south-1",
+  "bucket": "sample-bucket",
+  "path": "uploaded-file/jsons",
+  "file": "upload.json"
+}
