@@ -1,6 +1,6 @@
 # s3-uploader
 
-Uploads JSON files to Amazon S3. Each file sits next to a `config.json` that says where it goes, and `make` runs the checks, the diff and the upload.
+Uploads JSON files to Amazon S3. Each file sits next to a `config.json` that says where it goes, and `make` runs the checks, shows the file already in S3 and the diff, and does the upload.
 
 ## Layout
 
@@ -38,6 +38,7 @@ The region only comes from `config.json` or the default. The `AWS_REGION` and `A
 
 ```sh
 make lint                                    # check every config.json and JSON file under src/files
+make get    environment=dev dir=MY_FOLDER    # print the file currently in S3
 make diff   environment=dev dir=MY_FOLDER    # show what an upload would change in S3
 make upload environment=dev dir=MY_FOLDER    # upload the file, replacing what's there
 ```
@@ -46,22 +47,24 @@ make upload environment=dev dir=MY_FOLDER    # upload the file, replacing what's
 
 **`make lint`** checks every `config.json` the same way `diff` and `upload` do, and checks that every JSON file under `src/files` is valid. It lists every problem it finds, then fails if there were any. It doesn't contact AWS.
 
+**`make get`** downloads the file currently at the destination and prints all of it without reformatting, so you can see what's there before running `diff`. If nothing is in S3 yet, it says so and still succeeds. It fails only on errors.
+
 **`make diff`** downloads the file currently in S3 and prints a diff against the local file, with removed lines marked `-` and added lines marked `+`. If nothing is in S3 yet, every line shows as added. It compares the files exactly as written, so indentation changes show up too. It fails only on errors, not when there are changes.
 
 **`make upload`** uploads the file with content type `application/json`, replacing any file already at the destination.
 
-`diff` and `upload` check the config and the file before contacting AWS, so config mistakes show up even without credentials.
+`get`, `diff` and `upload` check the config and the file before contacting AWS, so config mistakes show up even without credentials.
 
 ## Requirements
 
 - `make`, `bash`, `jq` and `diff`
-- AWS CLI v2, for `diff` and `upload`
+- AWS CLI v2, for `get`, `diff` and `upload`
 
 On macOS, run `brew install awscli`, plus `brew install jq` if `jq` isn't already installed.
 
 ## Credentials
 
-`diff` and `upload` read credentials from these environment variables:
+`get`, `diff` and `upload` read credentials from these environment variables:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
@@ -69,10 +72,10 @@ On macOS, run `brew install awscli`, plus `brew install jq` if `jq` isn't alread
 
 | Command | Permissions needed |
 |---|---|
-| `diff` | `s3:GetObject` on the destination, e.g. `arn:aws:s3:::sample-bucket/uploaded-file/jsons/*`, and `s3:ListBucket` on the bucket, e.g. `arn:aws:s3:::sample-bucket` |
+| `get`, `diff` | `s3:GetObject` on the destination, e.g. `arn:aws:s3:::sample-bucket/uploaded-file/jsons/*`, and `s3:ListBucket` on the bucket, e.g. `arn:aws:s3:::sample-bucket` |
 | `upload` | `s3:PutObject` on the destination |
 
-Without `s3:ListBucket`, S3 reports a missing file as access denied, so `diff` fails instead of showing the new file. If the bucket is encrypted with a KMS key, the credentials also need access to that key.
+Without `s3:ListBucket`, S3 reports a missing file as access denied, so `get` and `diff` fail instead of saying nothing is there yet. If the bucket is encrypted with a KMS key, the credentials also need access to that key.
 
 Give each environment its own credentials that can only reach that environment's bucket or path. Then a config copied from another environment and not updated fails, instead of overwriting the wrong file.
 
@@ -81,10 +84,11 @@ Give each environment its own credentials that can only reach that environment's
 | Stage | Command | Credentials |
 |---|---|---|
 | lint | `make lint` | None |
+| get | `make get environment=<environment> dir=<dir>` | Read-only |
 | diff | `make diff environment=<environment> dir=<dir>` | Read-only |
 | upload (manual trigger) | `make upload environment=<environment> dir=<dir>` | Write |
 
-Set the credentials as secure environment variables on the diff and upload stages. Agents need the tools listed under [Requirements](#requirements).
+Set the credentials as secure environment variables on the get, diff and upload stages. Agents need the tools listed under [Requirements](#requirements).
 
 ## Adding an upload
 

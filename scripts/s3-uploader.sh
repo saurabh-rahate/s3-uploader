@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Lints, diffs and uploads JSON files to S3. The Makefile calls it as:
+# Lints, diffs and uploads JSON files to S3, and prints the file already there.
+# The Makefile calls it as:
 #
 #   scripts/s3-uploader.sh lint
+#   scripts/s3-uploader.sh get    <environment> <dir>
 #   scripts/s3-uploader.sh diff   <environment> <dir>
 #   scripts/s3-uploader.sh upload <environment> <dir>
 #
@@ -31,7 +33,9 @@ KEY=""
 REGION=""
 SOURCE=""
 
-# Temporary copy of the file currently in S3, used by diff.
+# Filled in by fetch_current: whether a file already exists at the destination,
+# and a temporary copy of it.
+CURRENT_EXISTS=false
 CURRENT_COPY=""
 
 fail() {
@@ -40,7 +44,7 @@ fail() {
 }
 
 usage() {
-  echo "Usage: $0 lint | diff <environment> <dir> | upload <environment> <dir>" >&2
+  echo "Usage: $0 lint | get <environment> <dir> | diff <environment> <dir> | upload <environment> <dir>" >&2
   exit 2
 }
 
@@ -210,24 +214,18 @@ run_lint() {
   echo "Lint passed: $checked_count file(s) checked."
 }
 
-run_diff() {
-  local error before before_label status=0
-
-  load_upload diff "$1" "$2"
-  require_aws
-  command -v diff >/dev/null 2>&1 || fail "diff is not installed."
+# Downloads the file currently at the destination, if there is one.
+# Sets CURRENT_EXISTS and CURRENT_COPY, and fails on any error other than the file not existing.
+fetch_current() {
+  local error
 
   CURRENT_COPY=$(mktemp)
   trap 'rm -f "$CURRENT_COPY"' EXIT
 
   if error=$(aws s3api get-object --bucket "$BUCKET" --key "$KEY" --region "$REGION" "$CURRENT_COPY" 2>&1 >/dev/null); then
-    before=$CURRENT_COPY
-    before_label="s3://$BUCKET/$KEY (current)"
+    CURRENT_EXISTS=true
   elif [[ $error == *NoSuchKey* ]]; then
-    echo "Nothing exists at the destination yet, so the whole file is new."
-    echo
-    before=/dev/null
-    before_label="s3://$BUCKET/$KEY (does not exist yet)"
+    CURRENT_EXISTS=false
   elif [[ $error == *AccessDenied* ]]; then
     fail "access denied reading s3://$BUCKET/$KEY.
 The credentials need s3:GetObject on the file, and s3:ListBucket on the bucket so that a missing file isn't reported as access denied.
@@ -235,6 +233,40 @@ ${error#$'\n'}"
   else
     fail "could not read s3://$BUCKET/$KEY.
 ${error#$'\n'}"
+  fi
+}
+
+run_get() {
+  load_upload get "$1" "$2"
+  require_aws
+
+  fetch_current
+  if [ "$CURRENT_EXISTS" = true ]; then
+    echo "Current file at the destination:"
+    cat "$CURRENT_COPY"
+    # End on a new line even if the file doesn't.
+    [ -z "$(tail -c 1 "$CURRENT_COPY")" ] || echo
+  else
+    echo "Nothing exists at the destination yet."
+  fi
+}
+
+run_diff() {
+  local before before_label status=0
+
+  load_upload diff "$1" "$2"
+  require_aws
+  command -v diff >/dev/null 2>&1 || fail "diff is not installed."
+
+  fetch_current
+  if [ "$CURRENT_EXISTS" = true ]; then
+    before=$CURRENT_COPY
+    before_label="s3://$BUCKET/$KEY (current)"
+  else
+    echo "Nothing exists at the destination yet, so the whole file is new."
+    echo
+    before=/dev/null
+    before_label="s3://$BUCKET/$KEY (does not exist yet)"
   fi
 
   diff -u --label "$before_label" --label "$SOURCE (new)" "$before" "$SOURCE" || status=$?
@@ -255,6 +287,10 @@ case ${1:-} in
   lint)
     require_jq
     run_lint
+    ;;
+  get)
+    require_jq
+    run_get "${2:-}" "${3:-}"
     ;;
   diff)
     require_jq

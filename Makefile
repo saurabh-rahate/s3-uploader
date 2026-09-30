@@ -1,4 +1,4 @@
-# Lint, diff and upload JSON files to S3. Run `make` to see usage.
+# Lint, get, diff and upload JSON files to S3. Run `make` to see usage.
 #
 # Each upload lives in src/files/<dir>/<environment>/, with a config.json saying
 # where the file goes. The work is done by scripts/s3-uploader.sh.
@@ -6,11 +6,12 @@
 SCRIPT := scripts/s3-uploader.sh
 
 .DEFAULT_GOAL := help
-.PHONY: help lint diff upload
+.PHONY: help lint get diff upload
 
 help:
 	@echo "Usage:"
 	@echo "  make lint                                 Check every config.json and JSON file under src/files"
+	@echo "  make get    environment=<env> dir=<dir>   Print the file currently in S3, if there is one"
 	@echo "  make diff   environment=<env> dir=<dir>   Show what an upload would change in S3"
 	@echo "  make upload environment=<env> dir=<dir>   Upload the file to S3"
 	@echo ""
@@ -19,6 +20,9 @@ help:
 
 lint:
 	@bash $(SCRIPT) lint
+
+get:
+	@bash $(SCRIPT) get '$(environment)' '$(dir)'
 
 diff:
 	@bash $(SCRIPT) diff '$(environment)' '$(dir)'
